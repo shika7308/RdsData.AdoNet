@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="AWSSDK.RDSDataService" Version="4.0.100.15" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="RdsData.AdoNet.Tests" />
+    </ItemGroup>
+
+</Project>

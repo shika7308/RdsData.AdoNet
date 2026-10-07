@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RdsData.AdoNet", "RdsData.AdoNet\RdsData.AdoNet.csproj", "{52D2AC94-F5CB-4F5C-9BBF-5BADA87B49E1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RdsData.AdoNet.Tests", "RdsData.AdoNet.Tests\RdsData.AdoNet.Tests.csproj", "{D2BAECC4-45E0-415B-9C6C-13A7559DEBEB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{52D2AC94-F5CB-4F5C-9BBF-5BADA87B49E1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{52D2AC94-F5CB-4F5C-9BBF-5BADA87B49E1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{52D2AC94-F5CB-4F5C-9BBF-5BADA87B49E1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{52D2AC94-F5CB-4F5C-9BBF-5BADA87B49E1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D2BAECC4-45E0-415B-9C6C-13A7559DEBEB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D2BAECC4-45E0-415B-9C6C-13A7559DEBEB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D2BAECC4-45E0-415B-9C6C-13A7559DEBEB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D2BAECC4-45E0-415B-9C6C-13A7559DEBEB}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
