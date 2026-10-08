@@ -140,6 +140,7 @@ public sealed class RdsDataConnection : DbConnection
         var response = await RdsDataExecutor.ExecuteAsync(
             ct => Client.BeginTransactionAsync(request, ct),
             _settings.ResumeRetryCount,
+            attemptTimeout: null,
             cancellationToken).ConfigureAwait(false);
 
         var tx = new RdsDataTransaction(this, response.TransactionId);

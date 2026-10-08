@@ -47,7 +47,16 @@ var newId = await conn.ExecuteScalarAsync<long>(
 await tx.CommitAsync();
 ```
 
-`IN` 句は Dapper の展開 (`WHERE id IN @Ids`) を使う。jsonb 列は SQL 側で `@Doc::jsonb` とキャストするか、ADO.NET を直接使う場合は `RdsDataParameter.TypeHint = TypeHint.JSON` を指定する。`= ANY(@Ids)` のような配列パラメータは Data API が非対応のため `NotSupportedException` になる。
+`IN` 句は Dapper の展開 (`WHERE id IN @Ids`) を使う。jsonb 列は SQL 側で `@Doc::jsonb` とキャストするか、ADO.NET を直接使う場合は `RdsDataParameter.TypeHint = TypeHint.JSON` を指定する。`= ANY(@Ids)` は使えない。Dapper が配列をそのまま渡すのは Npgsql の接続に限られ、それ以外では `(@Ids1,@Ids2)` に展開されて PostgreSQL の構文エラーになる。ADO.NET を直接使って配列を渡した場合は `NotSupportedException`。
+
+## リトライとタイムアウト
+
+- AWS SDK の自動リトライは無効化している (`MaxErrorRetry = 0`)。`ExecuteStatement` / `CommitTransaction` は冪等ではなく、応答喪失後の再送で二重実行やコミットの偽失敗が起きるため
+- 自動で再試行するのは、ステートメント未実行が確定しているエラー (`DatabaseResumingException`、スロットリング) のみ。回数は接続文字列の `ResumeRetryCount` (既定 5、待機は 1 秒から倍々で最大 16 秒)
+- `CommandTimeout` は API 呼び出し 1 回ごとに適用し、再開待ちの時間は含まない
+- タイムアウト時の `RdsDataException` は `IsTransient = false`。サーバー側で実行済みの可能性があるため、再試行するかは呼び出し側で判断すること
+- `Commit` が例外を投げた場合、コミット済みかどうかは不明として扱うこと
+- `RdsDataSource` / `RdsDataConnection` に独自の `IAmazonRDSDataService` を渡す場合は、そのクライアントでも `MaxErrorRetry = 0` を設定すること
 
 ## 必要な IAM 権限
 

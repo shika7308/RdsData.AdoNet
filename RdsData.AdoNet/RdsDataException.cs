@@ -42,24 +42,37 @@ public sealed partial class RdsDataException : DbException
 
 internal static class RdsDataExecutor
 {
-    private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan DefaultInitialDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan MaxDelay = TimeSpan.FromSeconds(16);
 
     /// <summary>
-    /// DatabaseResumingException のみリトライする。この例外はステートメント未実行を意味するため、
+    /// ステートメント未実行が確定しているエラー (DatabaseResumingException / スロットリング) のみリトライする。
     /// 非冪等な書き込みでも安全に再試行できる。それ以外の SDK 例外は RdsDataException に変換する。
     /// </summary>
+    /// <param name="attemptTimeout">
+    /// API 呼び出し 1 回ごとのタイムアウト。リトライ間の待機は含まない
+    /// (0 ACU からの再開待ちでコマンドタイムアウトを使い切らないようにするため)。
+    /// </param>
     public static async Task<T> ExecuteAsync<T>(
-        Func<CancellationToken, Task<T>> action, int resumeRetryCount, CancellationToken cancellationToken)
+        Func<CancellationToken, Task<T>> action,
+        int resumeRetryCount,
+        TimeSpan? attemptTimeout,
+        CancellationToken cancellationToken,
+        TimeSpan? initialDelay = null)
     {
-        var delay = InitialDelay;
+        var delay = initialDelay ?? DefaultInitialDelay;
         for (var attempt = 0; ; attempt++)
         {
+            using var timeoutCts = attemptTimeout is not null
+                ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+                : null;
+            if (attemptTimeout is { } t) timeoutCts!.CancelAfter(t);
+
             try
             {
-                return await action(cancellationToken).ConfigureAwait(false);
+                return await action(timeoutCts?.Token ?? cancellationToken).ConfigureAwait(false);
             }
-            catch (DatabaseResumingException) when (attempt < resumeRetryCount)
+            catch (AmazonRDSDataServiceException ex) when (IsRetryable(ex) && attempt < resumeRetryCount)
             {
                 await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 delay = delay * 2 > MaxDelay ? MaxDelay : delay * 2;
@@ -68,8 +81,19 @@ internal static class RdsDataExecutor
             {
                 throw RdsDataException.From(ex);
             }
+            catch (OperationCanceledException ex)
+                when (timeoutCts is { IsCancellationRequested: true } && !cancellationToken.IsCancellationRequested)
+            {
+                // タイムアウト時はサーバー側で実行済みの可能性がある。再試行は呼び出し側の判断に委ねるため IsTransient=false
+                throw new RdsDataException(
+                    $"The RDS Data API call timed out after {attemptTimeout!.Value.TotalSeconds:0.###} seconds. " +
+                    "The statement may or may not have been executed on the server.", ex);
+            }
         }
     }
+
+    private static bool IsRetryable(AmazonRDSDataServiceException ex) =>
+        ex is DatabaseResumingException || ex.ErrorCode is "ThrottlingException";
 }
 
 /// <summary>SDK クライアントはスレッドセーフかつ生成コストが高いため、リージョン単位で共有する。</summary>
@@ -78,7 +102,17 @@ internal static class RdsDataClientCache
     private static readonly ConcurrentDictionary<string, IAmazonRDSDataService> Clients = new(StringComparer.Ordinal);
 
     public static IAmazonRDSDataService Get(string? region) =>
-        Clients.GetOrAdd(region ?? string.Empty, static r => r.Length == 0
-            ? new AmazonRDSDataServiceClient()
-            : new AmazonRDSDataServiceClient(RegionEndpoint.GetBySystemName(r)));
+        Clients.GetOrAdd(region ?? string.Empty, static r => new AmazonRDSDataServiceClient(CreateConfig(r)));
+
+    /// <summary>
+    /// SDK の自動リトライは無効化する。ExecuteStatement / CommitTransaction は冪等ではなく、
+    /// 応答が失われた後に再送すると二重実行やコミットの偽失敗につながるため。
+    /// 安全なリトライは <see cref="RdsDataExecutor"/> が行う。
+    /// </summary>
+    internal static AmazonRDSDataServiceConfig CreateConfig(string? region)
+    {
+        var config = new AmazonRDSDataServiceConfig { MaxErrorRetry = 0 };
+        if (!string.IsNullOrEmpty(region)) config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
+        return config;
+    }
 }

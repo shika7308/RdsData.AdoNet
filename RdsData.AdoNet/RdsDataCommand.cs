@@ -24,9 +24,11 @@ public sealed class RdsDataCommand : DbCommand
     public override string CommandText { get; set; } = string.Empty;
 
     /// <summary>
-    /// クライアント側のタイムアウト (秒)。0 は無制限。
+    /// クライアント側のタイムアウト (秒)。0 は無制限。API 呼び出し 1 回ごとに適用し、
+    /// DatabaseResumingException のリトライ待ちは含まない (待ちの上限は ResumeRetryCount で決まる)。
     /// Data API 側にも同期実行の上限 (45 秒) があり、超過するとそちらが先にエラーになる。
     /// クライアント側でタイムアウトしてもサーバー側の SQL は止まらない可能性がある点に注意。
+    /// タイムアウトの例外は実行済みかどうか不明なため IsTransient=false とする。
     /// </summary>
     public override int CommandTimeout { get; set; } = 30;
 
@@ -117,7 +119,21 @@ public sealed class RdsDataCommand : DbCommand
     protected override async Task<DbDataReader> ExecuteDbDataReaderAsync(
         CommandBehavior behavior, CancellationToken cancellationToken)
     {
-        var response = await ExecuteCoreAsync(includeResultMetadata: true, cancellationToken).ConfigureAwait(false);
+        // Data API には実行せずにメタデータだけ取る手段がないため、SQL を実行してしまう前に拒否する
+        if ((behavior & CommandBehavior.SchemaOnly) != 0)
+            throw new NotSupportedException("CommandBehavior.SchemaOnly is not supported by RDS Data API.");
+
+        ExecuteStatementResponse response;
+        try
+        {
+            response = await ExecuteCoreAsync(includeResultMetadata: true, cancellationToken).ConfigureAwait(false);
+        }
+        catch when ((behavior & CommandBehavior.CloseConnection) != 0 && _connection is not null)
+        {
+            await _connection.CloseAsync().ConfigureAwait(false);
+            throw;
+        }
+
         var columns = response.ColumnMetadata ?? new List<ColumnMetadata>();
 
         // SELECT (列あり) の RecordsAffected は ADO.NET の慣例どおり -1
@@ -172,22 +188,10 @@ public sealed class RdsDataCommand : DbCommand
             },
         };
 
-        using var timeoutCts = CommandTimeout > 0
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
-            : null;
-        timeoutCts?.CancelAfter(TimeSpan.FromSeconds(CommandTimeout));
-        var token = timeoutCts?.Token ?? cancellationToken;
-
-        try
-        {
-            return await RdsDataExecutor.ExecuteAsync(
-                ct => conn.Client.ExecuteStatementAsync(request, ct),
-                conn.Settings.ResumeRetryCount,
-                token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            throw new RdsDataException($"Command timed out after {CommandTimeout} seconds.", ex, isTransient: true);
-        }
+        return await RdsDataExecutor.ExecuteAsync(
+            ct => conn.Client.ExecuteStatementAsync(request, ct),
+            conn.Settings.ResumeRetryCount,
+            CommandTimeout > 0 ? TimeSpan.FromSeconds(CommandTimeout) : null,
+            cancellationToken).ConfigureAwait(false);
     }
 }

@@ -28,6 +28,9 @@ public sealed class RdsDataTransaction : DbTransaction
 
     public override void Commit() => CommitAsync().GetAwaiter().GetResult();
 
+    /// <summary>
+    /// コミットはリトライしない。例外が出た場合、コミットされたかどうかは不明 (応答だけ失われた可能性がある) として扱うこと。
+    /// </summary>
     public override async Task CommitAsync(CancellationToken cancellationToken = default)
     {
         var conn = EnsureActive();
@@ -38,7 +41,7 @@ public sealed class RdsDataTransaction : DbTransaction
             TransactionId = TransactionId,
         };
         // コミット失敗時は状態不明のため Complete しない (後続の Dispose でロールバックを試みる)
-        await RdsDataExecutor.ExecuteAsync(ct => conn.Client.CommitTransactionAsync(request, ct), 0, cancellationToken)
+        await RdsDataExecutor.ExecuteAsync(ct => conn.Client.CommitTransactionAsync(request, ct), 0, attemptTimeout: null, cancellationToken)
             .ConfigureAwait(false);
         Complete();
     }
@@ -56,7 +59,7 @@ public sealed class RdsDataTransaction : DbTransaction
         };
         try
         {
-            await RdsDataExecutor.ExecuteAsync(ct => conn.Client.RollbackTransactionAsync(request, ct), 0, cancellationToken)
+            await RdsDataExecutor.ExecuteAsync(ct => conn.Client.RollbackTransactionAsync(request, ct), 0, attemptTimeout: null, cancellationToken)
                 .ConfigureAwait(false);
         }
         finally
