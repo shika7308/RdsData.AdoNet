@@ -1,8 +1,8 @@
 using System.Data;
 using Amazon.RDSDataService;
 using Amazon.RDSDataService.Model;
-using RdsData.AdoNet;
-using Xunit;
+
+namespace RdsData.AdoNet.Tests;
 
 public class RdsDataTypeMapperTests
 {

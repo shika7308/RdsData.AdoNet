@@ -1,5 +1,4 @@
-using RdsData.AdoNet;
-using Xunit;
+namespace RdsData.AdoNet.Tests;
 
 public class PostgresParameterRewriterTests
 {
